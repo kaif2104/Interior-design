@@ -69,7 +69,10 @@ pipeline {
         stage('Task 3: Rolling Deployment (Instances 1 & 2)') {
             steps {
                 script {
-                    echo "🔄 Performing Rolling Deployment on Web Server (${WEB_SERVER_IP})..."
+                    echo "🔄 Transferring Docker Image to Web Server (${WEB_SERVER_IP})..."
+                    sh "docker save ${IMAGE_NAME}:${BUILD_NUMBER} | ssh -o StrictHostKeyChecking=no ${WEB_USER}@${WEB_SERVER_IP} 'docker load'"
+
+                    echo "🔄 Performing Rolling Deployment..."
                     
                     // Deploy Instance 1 (Port 5001)
                     echo "Updating Instance 1 on Port 5001..."
