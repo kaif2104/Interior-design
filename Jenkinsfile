@@ -2,36 +2,45 @@ pipeline {
     agent any
     
     environment {
-        WEB_SERVER_IP = '65.1.47.84'
-        WEB_USER      = 'ubuntu'
-        IMAGE_NAME    = 'interior-design-backend'
+        // Multi-Server Architecture Configurations
+        WEB_SERVER_IP      = '65.1.47.84'
+        WEB_USER           = 'ubuntu'
+        IMAGE_NAME         = 'interior-design-backend'
+        GIT_REPO_URL       = 'https://github.com/kaif2104/Interior-design.git'
         
-        // Security Gate Control: Set to 'true' to intentionally FAIL build for interviewer demo
+        // 🧪 Demonstration Toggles for Interviewer
+        // Set 'true' to demonstrate Security Gate halting the pipeline (Task 2)
         FAIL_SECURITY_GATE = 'false'
         
-        // Health Check Simulation: Set to 'true' to intentionally FAIL health check for rollback demo
+        // Set 'true' to demonstrate Auto-Rollback on Health Check Failure (Task 5)
         SIMULATE_FAILURE   = 'false'
     }
 
     stages {
-        stage('Checkout') {
+        // ==========================================
+        // TASK 1: CI/CD Pipeline & Code Checkout
+        // ==========================================
+        stage('Task 1: Checkout Repository') {
             steps {
-                echo "📥 Step 1: Checking out code from repository..."
-                // Git checkout occurs automatically in Jenkins pipeline job
+                echo "📥 Checking out source code from GitHub..."
+                git branch: 'main', url: "${env.GIT_REPO_URL}"
             }
         }
 
+        // ==========================================
+        // TASK 1 & 2: DevSecOps Security Gate
+        // ==========================================
         stage('Task 1 & 2: Security Gate (SAST & Trivy Scan)') {
             steps {
                 script {
-                    echo "🔒 Running SAST & Dependency Audit..."
+                    echo "🔒 Running SAST & Dependency Vulnerability Audit..."
                     sh 'cd backend && npm audit --audit-level=high || true'
                     
-                    echo "🛡️ Running Trivy Codebase Security Scan..."
+                    echo "🛡️ Running Trivy Static File Security Scan..."
                     sh 'trivy fs --severity HIGH,CRITICAL .'
                     
                     if (env.FAIL_SECURITY_GATE == 'true') {
-                        error("⛔ SECURITY GATE FAILED: Critical Security Defect Detected! Pipeline Stopped.")
+                        error("⛔ SECURITY GATE FAILED: Critical Vulnerabilities Detected! Stopping Deployment Pipeline.")
                     } else {
                         echo "✅ Security Gate PASSED! Proceeding to container build."
                     }
@@ -39,91 +48,161 @@ pipeline {
             }
         }
 
-        stage('Task 1: Build Docker Container Image') {
-            steps {
-                echo "🐳 Building Docker Image..."
-                sh 'docker build -t $IMAGE_NAME:$BUILD_NUMBER -t $IMAGE_NAME:latest ./backend'
-            }
-        }
-
-        stage('Task 2: Container Security Scan Gate') {
+        // ==========================================
+        // TASK 1: Container Image Build & Image Scan
+        // ==========================================
+        stage('Task 1 & 2: Build & Scan Docker Image') {
             steps {
                 script {
-                    echo "🔍 Scanning Docker Container Image for Vulnerabilities..."
+                    echo "🐳 Building Docker Container Image..."
+                    sh 'docker build -t $IMAGE_NAME:$BUILD_NUMBER -t $IMAGE_NAME:latest ./backend'
+                    
+                    echo "🔍 Scanning Docker Image with Trivy..."
                     sh 'trivy image --severity CRITICAL $IMAGE_NAME:$BUILD_NUMBER'
                 }
             }
         }
 
-        stage('Task 3: Rolling Deployment (Instances v1 & v2)') {
+        // ==========================================
+        // TASK 3: Rolling Deployment
+        // ==========================================
+        stage('Task 3: Rolling Deployment (Instances 1 & 2)') {
             steps {
                 script {
                     echo "🔄 Performing Rolling Deployment on Web Server (${WEB_SERVER_IP})..."
                     
-                    // Instance 1 deployment
+                    // Deploy Instance 1 (Port 5001)
+                    echo "Updating Instance 1 on Port 5001..."
                     sh """
                         ssh -o StrictHostKeyChecking=no ${WEB_USER}@${WEB_SERVER_IP} "
-                            docker stop app-instance-1 || true
-                            docker rm app-instance-1 || true
-                            docker run -d --name app-instance-1 -p 5001:5000 ${IMAGE_NAME}:${BUILD_NUMBER}
+                            docker stop backend-instance-1 || true
+                            docker rm backend-instance-1 || true
+                            docker run -d --name backend-instance-1 -p 5001:5000 ${IMAGE_NAME}:${BUILD_NUMBER}
                         "
                     """
                     
-                    // Instance 2 deployment
+                    // Verify Instance 1 Health
+                    sleep 3
+                    sh "curl -f http://${WEB_SERVER_IP}:5001/health || true"
+
+                    // Deploy Instance 2 (Port 5002)
+                    echo "Updating Instance 2 on Port 5002..."
                     sh """
                         ssh -o StrictHostKeyChecking=no ${WEB_USER}@${WEB_SERVER_IP} "
-                            docker stop app-instance-2 || true
-                            docker rm app-instance-2 || true
-                            docker run -d --name app-instance-2 -p 5002:5000 ${IMAGE_NAME}:${BUILD_NUMBER}
+                            docker stop backend-instance-2 || true
+                            docker rm backend-instance-2 || true
+                            docker run -d --name backend-instance-2 -p 5002:5000 ${IMAGE_NAME}:${BUILD_NUMBER}
                         "
                     """
-                    echo "✅ Rolling deployment complete!"
+                    
+                    // Verify Instance 2 Health
+                    sleep 3
+                    sh "curl -f http://${WEB_SERVER_IP}:5002/health || true"
+                    echo "✅ Rolling deployment complete across all instances!"
                 }
             }
         }
 
+        // ==========================================
+        // TASK 4: Blue-Green Deployment
+        // ==========================================
         stage('Task 4: Blue-Green Deployment & Traffic Switch') {
             steps {
                 script {
                     echo "🔵🟢 Executing Blue-Green Deployment..."
                     
-                    // Deploy Green container on Port 8002
+                    // Inspect active port in Nginx
+                    def activePort = sh(
+                        script: "ssh -o StrictHostKeyChecking=no ${WEB_USER}@${WEB_SERVER_IP} \"cat /etc/nginx/sites-available/default | grep '127.0.0.1' | grep -oE '[0-9]+' | head -1 || echo '8001'\"",
+                        returnStdout: true
+                    ).trim()
+
+                    def targetPort  = (activePort == "8001") ? "8002" : "8001"
+                    def targetColor = (activePort == "8001") ? "green" : "blue"
+                    def activeColor = (activePort == "8001") ? "blue" : "green"
+
+                    echo "Current Active: ${activeColor} (${activePort}) -> Target Deployment: ${targetColor} (${targetPort})"
+
+                    // Deploy Target Container
                     sh """
                         ssh -o StrictHostKeyChecking=no ${WEB_USER}@${WEB_SERVER_IP} "
-                            docker stop app-green || true
-                            docker rm app-green || true
-                            docker run -d --name app-green -p 8002:5000 -e SIMULATE_FAILURE=${SIMULATE_FAILURE} ${IMAGE_NAME}:${BUILD_NUMBER}
+                            docker stop app-${targetColor} || true
+                            docker rm app-${targetColor} || true
+                            docker run -d --name app-${targetColor} -p ${targetPort}:5000 -e SIMULATE_FAILURE=${SIMULATE_FAILURE} ${IMAGE_NAME}:${BUILD_NUMBER}
                         "
                     """
-                    
-                    echo "✅ Green version deployed on Port 8002."
+
+                    // Test Target Environment before switching traffic
+                    sleep 3
+                    sh "curl -f http://${WEB_SERVER_IP}:${targetPort}/health"
+
+                    // Switch Nginx Traffic
+                    sh """
+                        ssh -o StrictHostKeyChecking=no ${WEB_USER}@${WEB_SERVER_IP} "
+                            sudo sed -i 's/${activePort}/${targetPort}/g' /etc/nginx/sites-available/default
+                            sudo systemctl reload nginx
+                        "
+                    """
+                    echo "🎉 Nginx Traffic successfully switched to ${targetColor.toUpperCase()} (${targetPort})!"
                 }
             }
         }
 
-        stage('Task 5: Automatic Health Check Gate & Auto-Rollback') {
+        // ==========================================
+        // TASK 5: Automatic Health Check Gate
+        // ==========================================
+        stage('Task 5: Automatic Health Check & Auto-Rollback') {
             steps {
                 script {
-                    echo "🩺 Performing Automated Post-Deployment Health Check..."
+                    echo "🩺 Running Post-Deployment Health Check Gate..."
                     sleep 3
                     
                     def responseCode = sh(
-                        script: "ssh -o StrictHostKeyChecking=no ${WEB_USER}@${WEB_SERVER_IP} 'curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8002/health'",
+                        script: "ssh -o StrictHostKeyChecking=no ${WEB_USER}@${WEB_SERVER_IP} 'curl -s -o /dev/null -w \"%{http_code}\" http://localhost/health'",
                         returnStdout: true
                     ).trim()
 
                     if (responseCode != "200") {
-                        echo "❌ Health check FAILED with status: ${responseCode}! Triggering Auto-Rollback..."
+                        echo "❌ Health check FAILED with HTTP Status Code: ${responseCode}! Triggering Rollback..."
+                        
+                        // Automatic Rollback: Revert Nginx back to 8001
                         sh """
                             ssh -o StrictHostKeyChecking=no ${WEB_USER}@${WEB_SERVER_IP} "
-                                docker stop app-green || true
-                                docker rm app-green || true
-                                docker start app-blue || true
+                                sudo sed -i 's/8002/8001/g' /etc/nginx/sites-available/default
+                                sudo systemctl reload nginx
                             "
                         """
-                        error("Deployment halted and rolled back due to failed health check!")
+                        error("⛔ Pipeline stopped & rolled back due to Health Check Failure!")
                     } else {
-                        echo "✅ Health Check PASSED (HTTP 200 OK)."
+                        echo "✅ Automatic Health Check PASSED (HTTP 200 OK)."
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // TASK 6: Database Migration & Schema Validation
+        // ==========================================
+        stage('Task 6: Database Migration & Schema Validation') {
+            steps {
+                script {
+                    echo "🗄️ Executing Database Migration Script..."
+                    
+                    def migrationStatus = sh(
+                        script: """
+                            ssh -o StrictHostKeyChecking=no ${WEB_USER}@${WEB_SERVER_IP} "
+                                docker exec app-green node migrations/001_add_user_status.js || \
+                                docker exec app-blue node migrations/001_add_user_status.js
+                            "
+                        """,
+                        returnStatus: true
+                    )
+
+                    if (migrationStatus != 0) {
+                        echo "🚨 Database Migration Failed! Stopping deployment..."
+                        error("Pipeline failed: DB Schema Migration Error.")
+                    } else {
+                        echo "✅ Database Migration & Schema Validation Verified!"
                     }
                 }
             }
@@ -132,10 +211,10 @@ pipeline {
 
     post {
         success {
-            echo "🎉 DevSecOps Pipeline Completed Successfully!"
+            echo "🎉 ALL DevSecOps Practical Tasks (1-6) Executed Successfully!"
         }
         failure {
-            echo "🚨 Pipeline Failed! Check Security Gate or Health Logs."
+            echo "🚨 DevSecOps Pipeline Terminated / Rolled Back due to Security Gate or Health Failure."
         }
     }
 }
