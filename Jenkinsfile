@@ -126,12 +126,12 @@ pipeline {
 
                     echo "Current Active: ${activeColor} (${activePort}) -> Target Deployment: ${targetColor} (${targetPort})"
 
-                    // Deploy Target Container
+                    // Deploy Target Container with host network mode for direct DB access
                     sh """
                         ssh -o StrictHostKeyChecking=no ${WEB_USER}@${WEB_SERVER_IP} "
                             docker stop app-${targetColor} || true
                             docker rm app-${targetColor} || true
-                            docker run -d --name app-${targetColor} -p ${targetPort}:5000 -e MONGO_URI=mongodb://127.0.0.1:27017/interiordesign -e SIMULATE_FAILURE=${SIMULATE_FAILURE} ${IMAGE_NAME}:${BUILD_NUMBER}
+                            docker run -d --name app-${targetColor} --network host -e PORT=${targetPort} -e MONGO_URI=mongodb://127.0.0.1:27017/interiordesign -e SIMULATE_FAILURE=${SIMULATE_FAILURE} ${IMAGE_NAME}:${BUILD_NUMBER}
                         "
                     """
 
@@ -194,8 +194,8 @@ pipeline {
                     def migrationStatus = sh(
                         script: """
                             ssh -o StrictHostKeyChecking=no ${WEB_USER}@${WEB_SERVER_IP} "
-                                docker exec app-green node migrations/001_add_user_status.js || \
-                                docker exec app-blue node migrations/001_add_user_status.js || \
+                                docker exec -e MONGO_URI=mongodb://127.0.0.1:27017/interiordesign app-green node migrations/001_add_user_status.js || \
+                                docker exec -e MONGO_URI=mongodb://127.0.0.1:27017/interiordesign app-blue node migrations/001_add_user_status.js || \
                                 docker run --rm --network host -e MONGO_URI=mongodb://127.0.0.1:27017/interiordesign ${IMAGE_NAME}:${BUILD_NUMBER} node migrations/001_add_user_status.js
                             "
                         """,
