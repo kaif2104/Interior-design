@@ -194,9 +194,7 @@ pipeline {
                     def migrationStatus = sh(
                         script: """
                             ssh -o StrictHostKeyChecking=no ${WEB_USER}@${WEB_SERVER_IP} "
-                                docker exec -e MONGO_URI=mongodb://127.0.0.1:27017/interiordesign app-green node migrations/001_add_user_status.js || \
-                                docker exec -e MONGO_URI=mongodb://127.0.0.1:27017/interiordesign app-blue node migrations/001_add_user_status.js || \
-                                docker run --rm --network host -e MONGO_URI=mongodb://127.0.0.1:27017/interiordesign ${IMAGE_NAME}:${BUILD_NUMBER} node migrations/001_add_user_status.js
+                                docker run --rm --add-host=host.docker.internal:host-gateway -e MONGO_URI=mongodb://host.docker.internal:27017/interiordesign ${IMAGE_NAME}:${BUILD_NUMBER} node migrations/001_add_user_status.js
                             "
                         """,
                         returnStatus: true
