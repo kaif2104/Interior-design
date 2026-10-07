@@ -1,11 +1,11 @@
 const mongoose = require('mongoose');
-require('dotenv').config();
 
 async function runMigration() {
-  const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/interiordesign';
+  // Explicitly force process.env.MONGO_URI or fallback to host.docker.internal
+  const mongoUri = process.env.MONGO_URI || 'mongodb://host.docker.internal:27017/interiordesign';
   console.log(`Connecting to MongoDB at ${mongoUri}...`);
   
-  await mongoose.connect(mongoUri);
+  await mongoose.connect(mongoUri, { serverSelectionTimeoutMS: 5000 });
   const db = mongoose.connection.db;
 
   console.log("Running migration: Adding default status to Users...");
