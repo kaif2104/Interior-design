@@ -131,7 +131,7 @@ pipeline {
                         ssh -o StrictHostKeyChecking=no ${WEB_USER}@${WEB_SERVER_IP} "
                             docker stop app-${targetColor} || true
                             docker rm app-${targetColor} || true
-                            docker run -d --name app-${targetColor} -p ${targetPort}:5000 -e SIMULATE_FAILURE=${SIMULATE_FAILURE} ${IMAGE_NAME}:${BUILD_NUMBER}
+                            docker run -d --name app-${targetColor} -p ${targetPort}:5000 -e MONGO_URI=mongodb://127.0.0.1:27017/interiordesign -e SIMULATE_FAILURE=${SIMULATE_FAILURE} ${IMAGE_NAME}:${BUILD_NUMBER}
                         "
                     """
 
