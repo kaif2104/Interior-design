@@ -84,9 +84,9 @@ pipeline {
                         "
                     """
                     
-                    // Verify Instance 1 Health
+                    // Verify Instance 1 Health internally
                     sleep 3
-                    sh "curl -f http://${WEB_SERVER_IP}:5001/health || true"
+                    sh "ssh -o StrictHostKeyChecking=no ${WEB_USER}@${WEB_SERVER_IP} 'curl -f http://localhost:5001/health || true'"
 
                     // Deploy Instance 2 (Port 5002)
                     echo "Updating Instance 2 on Port 5002..."
@@ -98,9 +98,9 @@ pipeline {
                         "
                     """
                     
-                    // Verify Instance 2 Health
+                    // Verify Instance 2 Health internally
                     sleep 3
-                    sh "curl -f http://${WEB_SERVER_IP}:5002/health || true"
+                    sh "ssh -o StrictHostKeyChecking=no ${WEB_USER}@${WEB_SERVER_IP} 'curl -f http://localhost:5002/health || true'"
                     echo "✅ Rolling deployment complete across all instances!"
                 }
             }
@@ -114,9 +114,9 @@ pipeline {
                 script {
                     echo "🔵🟢 Executing Blue-Green Deployment..."
                     
-                    // Inspect active port in Nginx
+                    // Inspect active port in Nginx default file
                     def activePort = sh(
-                        script: "ssh -o StrictHostKeyChecking=no ${WEB_USER}@${WEB_SERVER_IP} \"cat /etc/nginx/sites-available/default | grep '127.0.0.1' | grep -oE '[0-9]+' | head -1 || echo '8001'\"",
+                        script: "ssh -o StrictHostKeyChecking=no ${WEB_USER}@${WEB_SERVER_IP} \"grep -oE '8001|8002' /etc/nginx/sites-available/default | head -1 || echo '8001'\"",
                         returnStdout: true
                     ).trim()
 
@@ -135,9 +135,9 @@ pipeline {
                         "
                     """
 
-                    // Test Target Environment before switching traffic
+                    // Test Target Environment internally before switching traffic
                     sleep 3
-                    sh "curl -f http://${WEB_SERVER_IP}:${targetPort}/health"
+                    sh "ssh -o StrictHostKeyChecking=no ${WEB_USER}@${WEB_SERVER_IP} 'curl -f http://localhost:${targetPort}/health'"
 
                     // Switch Nginx Traffic
                     sh """
