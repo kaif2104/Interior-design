@@ -58,14 +58,14 @@ app.get('/health', (req, res) => {
   }
   res.status(200).json({
     status: 'UP',
-    version: process.env.APP_VERSION || '1.0.0',
+    version: process.env.APP_VERSION || '1.1.0',
     timestamp: new Date()
   });
 });
 
 // Test route
 app.get('/', (req, res) => {
-  res.send('Interior Design API is running with Session & Cookie Auth');
+  res.send('Interior Design API v1.1.0 is running smoothly!');
 });
 
 // Start server
